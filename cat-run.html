@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ニャーニング ラン - Cat Runner</title>
+<style>
+  :root{
+    --sky-top:#7fd6ff;
+    --sky-bottom:#eaf9ff;
+    --sun:#fff6d8;
+    --panel:#fffaf0;
+    --ink:#3b3242;
+    --accent:#ff9d6c;
+    --accent2:#8fd6a8;
+    --shadow: 0 10px 30px rgba(60,40,30,0.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden;
+    font-family:"Hiragino Maru Gothic ProN","Yu Gothic","Segoe UI",sans-serif;
+    background:linear-gradient(var(--sky-top), var(--sky-bottom));
+    touch-action:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  #canvas-wrap{ position:fixed; inset:0; }
+  canvas{ display:block; width:100%; height:100%; }
+
+  /* ------- HUD ------- */
+  #hud{
+    position:fixed; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding: max(14px, env(safe-area-inset-top)) 16px 0 16px;
+    pointer-events:none;
+    z-index:10;
+  }
+  .pill{
+    background:var(--panel);
+    color:var(--ink);
+    border-radius:999px;
+    padding:8px 18px;
+    font-weight:700;
+    font-size:15px;
+    box-shadow:var(--shadow);
+    display:flex; align-items:center; gap:8px;
+    letter-spacing:0.02em;
+  }
+  #score-pill{ font-size:20px; }
+  #score-pill span.label{ font-size:12px; font-weight:600; opacity:0.6; margin-right:2px;}
+  #zoomies-bar-wrap{
+    position:fixed; top:70px; left:50%; transform:translateX(-50%);
+    width:min(70vw, 320px); height:14px; border-radius:999px;
+    background:rgba(255,255,255,0.55);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.8), var(--shadow);
+    overflow:hidden; z-index:10; opacity:0; transition:opacity .25s;
+    pointer-events:none;
+  }
+  #zoomies-bar-wrap.show{ opacity:1; }
+  #zoomies-bar{
+    height:100%; width:100%;
+    background:linear-gradient(90deg,#ffb56b,#ff7e9a,#ffb56b);
+    background-size:200% 100%;
+    animation: zoomshift 0.6s linear infinite;
+  }
+  @keyframes zoomshift{ from{background-position:0% 0;} to{background-position:200% 0;} }
+
+  /* ------- overlays ------- */
+  .overlay{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column;
+    background:rgba(60,45,55,0.28);
+    backdrop-filter: blur(3px);
+    z-index:30;
+    text-align:center;
+    padding:20px;
+  }
+  .card{
+    background:var(--panel);
+    border-radius:28px;
+    padding:34px 30px 28px;
+    box-shadow:var(--shadow);
+    max-width:360px; width:100%;
+    color:var(--ink);
+  }
+  .card h1{
+    font-size:26px; margin:0 0 6px;
+    letter-spacing:0.02em;
+  }
+  .card p.sub{
+    margin:0 0 22px; font-size:14px; opacity:0.65; font-weight:600;
+  }
+  .card .big-score{
+    font-size:46px; font-weight:800; margin:6px 0 2px;
+    color:var(--accent);
+  }
+  .card .best{
+    font-size:13px; opacity:0.6; margin-bottom:22px; font-weight:600;
+  }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    border-radius:999px;
+    font-size:17px; font-weight:800;
+    padding:14px 30px;
+    cursor:pointer;
+    box-shadow: 0 8px 18px rgba(255,157,108,0.45);
+    width:100%;
+    letter-spacing:0.02em;
+    transition:transform .12s ease;
+  }
+  .btn:active{ transform:scale(0.96); }
+  .btn.secondary{
+    background:var(--accent2);
+    box-shadow: 0 8px 18px rgba(143,214,168,0.45);
+    margin-top:10px;
+  }
+  .howto{
+    text-align:left; font-size:13px; line-height:1.7; margin:18px 0 24px;
+    background:rgba(0,0,0,0.04); border-radius:16px; padding:14px 16px;
+  }
+  .howto b{ color:var(--accent); }
+
+  /* ------- touch controls ------- */
+  #touch-zones{
+    position:fixed; inset:0; display:flex; z-index:5;
+  }
+  #touch-zones > div{ flex:1; }
+
+  #footer-tip{
+    position:fixed; bottom:max(14px, env(safe-area-inset-bottom)); left:0; right:0;
+    text-align:center; font-size:12px; color:var(--ink); opacity:0.55;
+    font-weight:700; pointer-events:none; z-index:6;
+    letter-spacing:0.03em;
+  }
+
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+<div id="touch-zones">
+  <div id="zone-left"></div>
+  <div id="zone-right"></div>
+</div>
+
+<div id="hud">
+  <div class="pill" id="score-pill"><span class="label">SCORE</span><span id="score-val">0</span></div>
+  <div class="pill" id="best-pill"><span class="label">BEST</span><span id="best-val">0</span></div>
+</div>
+<div id="zoomies-bar-wrap"><div id="zoomies-bar"></div></div>
+<div id="footer-tip">← → キー / 画面タップ で レーン移動</div>
+
+<div class="overlay" id="start-overlay">
+  <div class="card">
+    <h1>🐈 ニャーニング ラン</h1>
+    <p class="sub">CAT RUNNER PROTOTYPE</p>
+    <div class="howto">
+      🐾 <b>← / →</b> または画面の左右タップでレーン移動<br>
+      🌿 <b>猫じゃらし・段ボール</b>にぶつかるとゴロン<br>
+      ✨ <b>またたび</b>を取ると一定時間ズーミーズ（猛ダッシュ）！
+    </div>
+    <button class="btn" id="start-btn">はじめる</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="gameover-overlay">
+  <div class="card">
+    <h1>ゴロン…💤</h1>
+    <p class="sub">GAME OVER</p>
+    <div class="big-score" id="final-score">0</div>
+    <div class="best" id="final-best">ベスト: 0</div>
+    <button class="btn" id="retry-btn">もう一回！</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ============ 基本セットアップ ============ */
+  const wrap = document.getElementById('canvas-wrap');
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xbfeeff, 22, 70);
+
+  const camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 200);
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  wrap.appendChild(renderer.domElement);
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* ============ ライト ============ */
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xffd9b0, 0.9);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff3d0, 1.05);
+  sun.position.set(-8, 18, 10);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.left = -15;
+  sun.shadow.camera.right = 15;
+  sun.shadow.camera.top = 15;
+  sun.shadow.camera.bottom = -15;
+  sun.shadow.camera.far = 50;
+  scene.add(sun);
+
+  /* ============ 空（グラデーション球） ============ */
+  const clouds = [];
+  (function buildSky(){
+    const skyGeo = new THREE.SphereGeometry(120, 24, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms:{
+        topColor:{ value:new THREE.Color(0x63c9ff) },
+        bottomColor:{ value:new THREE.Color(0xeafcff) },
+      },
+      vertexShader:`
+        varying vec3 vWorldPos;
+        void main(){
+          vec4 wp = modelMatrix * vec4(position,1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader:`
+        varying vec3 vWorldPos;
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        void main(){
+          float h = normalize(vWorldPos).y * 0.5 + 0.5;
+          gl_FragColor = vec4(mix(bottomColor, topColor, pow(h,0.6)), 1.0);
+        }
+      `
+    });
+    scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+    // ふわふわ雲
+    const cloudMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.9 });
+    for(let i=0;i<14;i++){
+      const g = new THREE.Group();
+      const puffs = 3 + Math.floor(Math.random()*3);
+      for(let p=0; p<puffs; p++){
+        const s = 1.4 + Math.random()*1.6;
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(s, 8, 8), cloudMat);
+        puff.position.set((Math.random()-0.5)*3.5, (Math.random()-0.5)*0.8, (Math.random()-0.5)*1.5);
+        g.add(puff);
+      }
+      g.position.set((Math.random()-0.5)*90, 14+Math.random()*14, -40 - Math.random()*90 + 40*(i%2));
+      g.userData.speed = 0.15 + Math.random()*0.15;
+      scene.add(g);
+      clouds.push(g);
+    }
+  })();
+
+  /* ============ レーン & コース定数 ============ */
+  const LANE_X = [-2.2, 0, 2.2];
+  let laneIndex = 1;          // 現在レーン (0,1,2)
+  let laneTargetX = 0;
+  const FLOOR_WIDTH = 8;
+
+  /* ============ 床（無限スクロールタイル） ============ */
+  const floorTiles = [];
+  const TILE_LEN = 20;
+  const TILE_COUNT = 6;
+
+  function makeFloorTile(zPos, idx){
+    const g = new THREE.Group();
+
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: idx % 2 === 0 ? 0xbdeeb0 : 0xaee6c9,
+      roughness:0.9,
+    });
+    const base = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_WIDTH+6, TILE_LEN), baseMat);
+    base.rotation.x = -Math.PI/2;
+    base.receiveShadow = true;
+    g.add(base);
+
+    // レーンの光る道（キラキラ床）
+    const pathMat = new THREE.MeshStandardMaterial({
+      color:0xfff3da, roughness:0.5, metalness:0.05, emissive:0xffe9b8, emissiveIntensity:0.15
+    });
+    const path = new THREE.Mesh(new THREE.PlaneGeometry(FLOOR_WIDTH, TILE_LEN), pathMat);
+    path.rotation.x = -Math.PI/2;
+    path.position.y = 0.01;
+    path.receiveShadow = true;
+    g.add(path);
+
+    // レーン境界の点線
+    const dotMat = new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.75 });
+    for(const lx of [-1.1, 1.1]){
+      for(let d=0; d<TILE_LEN; d+=2.4){
+        const dot = new THREE.Mesh(new THREE.CircleGeometry(0.08, 8), dotMat);
+        dot.rotation.x = -Math.PI/2;
+        dot.position.set(lx, 0.02, -TILE_LEN/2 + d);
+        g.add(dot);
+      }
+    }
+
+    g.position.z = zPos;
+    scene.add(g);
+    floorTiles.push(g);
+  }
+  for(let i=0;i<TILE_COUNT;i++) makeFloorTile(-i*TILE_LEN, i);
+
+  /* ============ カプセル形状ヘルパー（r128にCapsuleGeometryが無いため自作） ============ */
+  function makeCapsule(radius, length, mat){
+    const g = new THREE.Group();
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 10), mat);
+    cyl.rotation.z = Math.PI/2;
+    g.add(cyl);
+    const capGeo = new THREE.SphereGeometry(radius, 10, 8, 0, Math.PI*2, 0, Math.PI/2);
+    const cap1 = new THREE.Mesh(capGeo, mat);
+    cap1.rotation.z = -Math.PI/2;
+    cap1.position.x = length/2;
+    g.add(cap1);
+    const cap2 = new THREE.Mesh(capGeo, mat);
+    cap2.rotation.z = Math.PI/2;
+    cap2.position.x = -length/2;
+    g.add(cap2);
+    g.userData.isCapsule = true;
+    return g;
+  }
+
+  /* ============ 猫キャラクター ============ */
+  function buildCat(){
+    const cat = new THREE.Group();
+    const fur = new THREE.MeshStandardMaterial({ color:0xffb27a, roughness:0.7 });
+    const furDark = new THREE.MeshStandardMaterial({ color:0xff8f52, roughness:0.7 });
+    const white = new THREE.MeshStandardMaterial({ color:0xfff6ea, roughness:0.6 });
+    const pink = new THREE.MeshStandardMaterial({ color:0xff9fae, roughness:0.5 });
+    const dark = new THREE.MeshStandardMaterial({ color:0x3b2f2a, roughness:0.4 });
+
+    // body (makeCapsuleは既にx軸方向のカプセルなので、そのままZ軸に向けて回転)
+    const body = makeCapsule(0.42, 0.55, fur);
+    body.rotation.y = Math.PI/2;
+    body.position.set(0, 0.62, 0.05);
+    body.traverse(m=>{ if(m.isMesh) m.castShadow = true; });
+    cat.add(body);
+
+    // belly
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8), white);
+    belly.position.set(0,0.42,0.32);
+    belly.scale.set(1,0.8,0.7);
+    cat.add(belly);
+
+    // head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 10), fur);
+    head.position.set(0, 0.98, 0.62);
+    head.castShadow = true;
+    cat.add(head);
+
+    // muzzle
+    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.18,10,8), white);
+    muzzle.position.set(0,0.9,0.92);
+    cat.add(muzzle);
+
+    // nose
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.045,6,6), pink);
+    nose.position.set(0,0.95,1.06);
+    cat.add(nose);
+
+    // eyes
+    for(const s of [-1,1]){
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055,8,8), dark);
+      eye.position.set(0.15*s, 1.0, 0.92);
+      cat.add(eye);
+    }
+
+    // ears
+    const earGeo = new THREE.ConeGeometry(0.16, 0.28, 4);
+    for(const s of [-1,1]){
+      const ear = new THREE.Mesh(earGeo, furDark);
+      ear.position.set(0.22*s, 1.28, 0.55);
+      ear.rotation.z = -0.15*s;
+      ear.rotation.x = -0.1;
+      ear.castShadow = true;
+      cat.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.09,0.16,4), pink);
+      inner.position.set(0.22*s, 1.26, 0.6);
+      inner.rotation.copy(ear.rotation);
+      cat.add(inner);
+    }
+
+    // legs (走行アニメ用に個別保持) - makeCapsuleはx軸向きなので90度回して縦にする
+    const legs = [];
+    const legPos = [[-0.22,0.3,0.3],[0.22,0.3,0.3],[-0.22,0.3,-0.28],[0.22,0.3,-0.28]];
+    for(const p of legPos){
+      const legPivot = new THREE.Group();
+      const leg = makeCapsule(0.09, 0.3, furDark);
+      leg.rotation.z = Math.PI/2;
+      leg.traverse(m=>{ if(m.isMesh) m.castShadow = true; });
+      legPivot.add(leg);
+      legPivot.position.set(p[0],p[1],p[2]);
+      cat.add(legPivot);
+      legs.push(legPivot);
+    }
+
+    // tail
+    const tailPivot = new THREE.Group();
+    const tail = makeCapsule(0.08,0.55,furDark);
+    tail.rotation.z = Math.PI/2;
+    tail.position.y = 0.275;
+    tailPivot.add(tail);
+    tailPivot.position.set(0,0.85,-0.55);
+    tailPivot.rotation.x = 0.9;
+    cat.add(tailPivot);
+
+    cat.userData.legs = legs;
+    cat.userData.tail = tailPivot;
+    cat.userData.head = head;
+    cat.userData.body = body;
+
+    cat.scale.set(0.95,0.95,0.95);
+    return cat;
+  }
+
+  const cat = buildCat();
+  cat.position.set(0, 0, 2);
+  scene.add(cat);
+
+  /* 猫の影を強調するふわっとした接地シャドウ用ライト補助 */
+  const catFillLight = new THREE.PointLight(0xffffff, 0.3, 6);
+  catFillLight.position.set(0, 2, 3.5);
+  scene.add(catFillLight);
+
+  /* ============ カメラ初期位置 ============ */
+  const camOffset = new THREE.Vector3(0, 2.6, 6.2);
+  camera.position.copy(cat.position).add(camOffset);
+  camera.lookAt(cat.position.x, cat.position.y+0.9, cat.position.z-3);
+
+  /* ============ オブジェクト（障害物・アイテム）管理 ============ */
+  const obstacles = []; // {mesh, type, lane, z}
+  const items = [];
+
+  function makeCatGrass(){ // 猫じゃらし
+    const g = new THREE.Group();
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035,0.05,0.9,6),
+      new THREE.MeshStandardMaterial({color:0x6ea64a, roughness:0.8})
+    );
+    stem.position.y = 0.45;
+    stem.castShadow = true;
+    g.add(stem);
+    const spike = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11,0.11,0.5,8),
+      new THREE.MeshStandardMaterial({color:0xd8c27a, roughness:0.9})
+    );
+    spike.position.y = 1.05;
+    spike.rotation.z = 0.25;
+    spike.castShadow = true;
+    g.add(spike);
+    // ふわふわ感の小トゲ
+    for(let i=0;i<10;i++){
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.045,6,6), new THREE.MeshStandardMaterial({color:0xe6d391}));
+      const t = i/10;
+      b.position.set(Math.sin(t*20)*0.09, 0.82 + t*0.5, Math.cos(t*20)*0.09);
+      g.add(b);
+    }
+    g.userData.hitR = 0.5;
+    g.userData.hitH = 1.1;
+    return g;
+  }
+
+  function makeBox(){ // 段ボール
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color:0xc99a63, roughness:0.95 });
+    const matDark = new THREE.MeshStandardMaterial({ color:0xa9793f, roughness:0.95 });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.85,0.75,0.85), mat);
+    box.position.y = 0.375;
+    box.castShadow = true;
+    g.add(box);
+    // テープ十字
+    const tapeGeo1 = new THREE.BoxGeometry(0.92,0.13,0.1);
+    const tape1 = new THREE.Mesh(tapeGeo1, matDark);
+    tape1.position.set(0,0.75,0.43);
+    g.add(tape1);
+    const tape2 = new THREE.Mesh(new THREE.BoxGeometry(0.13,0.92,0.1), matDark);
+    tape2.position.set(0,0.75,0.43);
+    g.add(tape2);
+    g.userData.hitR = 0.55;
+    g.userData.hitH = 0.9;
+    return g;
+  }
+
+  function makeMatatabi(){ // またたび（アイテム）
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color:0xb6f27a, emissive:0x6fdb3a, emissiveIntensity:0.45, roughness:0.4
+    });
+    const leaf1 = new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8), mat);
+    leaf1.scale.set(1,1.4,0.5);
+    leaf1.rotation.z = 0.5;
+    g.add(leaf1);
+    const leaf2 = leaf1.clone();
+    leaf2.rotation.z = -0.5;
+    leaf2.rotation.y = 1.2;
+    g.add(leaf2);
+    const leaf3 = leaf1.clone();
+    leaf3.rotation.y = -1.2;
+    g.add(leaf3);
+    const glow = new THREE.PointLight(0x9dffb0, 0.9, 3);
+    g.add(glow);
+    g.position.y = 0.9;
+    g.userData.hitR = 0.55;
+    g.userData.bob = Math.random()*Math.PI*2;
+    return g;
+  }
+
+  const SPAWN_START_Z = -55;
+  const patterns = ['grass','box','matatabi','empty'];
+
+  function spawnRow(z){
+    // 3レーンのうちランダムにオブジェクトを配置（毎回全部塞がないよう1〜2個まで）
+    const laneOrder = [0,1,2].sort(()=>Math.random()-0.5);
+    const count = Math.random()<0.55 ? 1 : 2;
+    const usedLanes = laneOrder.slice(0,count);
+
+    for(const lane of usedLanes){
+      const roll = Math.random();
+      let mesh, type;
+      if(roll < 0.4){ mesh = makeCatGrass(); type='grass'; }
+      else if(roll < 0.75){ mesh = makeBox(); type='box'; }
+      else { mesh = makeMatatabi(); type='matatabi'; }
+
+      mesh.position.set(LANE_X[lane], type==='matatabi'?0.9:0, z + (Math.random()*2-1)*1.5);
+      scene.add(mesh);
+      if(type==='matatabi'){
+        items.push({ mesh, lane, collected:false });
+      } else {
+        obstacles.push({ mesh, lane, type, hit:false });
+      }
+    }
+  }
+
+  function initSpawns(){
+    for(let z = SPAWN_START_Z; z < -8; z += 6){
+      if(Math.random() < 0.82) spawnRow(z);
+    }
+  }
+
+  /* ============ 状態管理 ============ */
+  let running = false;
+  let gameOver = false;
+  let started = false;
+
+  let baseSpeed = 9.0;      // 前進速度 (unit/s)
+  let speed = baseSpeed;
+  let distance = 0;
+  let score = 0;
+  let best = 0;
+  try{ best = parseInt(localStorage.getItem('catrun_best')||'0',10) || 0; }catch(e){ best = 0; }
+  document.getElementById('best-val').textContent = best;
+
+  let zoomies = false;
+  let zoomiesTimer = 0;
+  const ZOOMIES_DURATION = 4.2;
+  const ZOOMIES_MULT = 2.0;
+
+  let stunTimer = 0; // ぶつかった時のよろけ〜寝転び時間
+  let laid = false;
+
+  let nextSpawnZ = SPAWN_START_Z;
+  const SPAWN_STEP = 6;
+
+  let runCycle = 0;
+
+  /* ============ 入力 ============ */
+  function moveLane(dir){
+    if(gameOver || !running) return;
+    const next = laneIndex + dir;
+    if(next < 0 || next > 2) return;
+    laneIndex = next;
+    laneTargetX = LANE_X[laneIndex];
+    // ちょいバンク演出
+    cat.userData.bankTarget = -dir*0.35;
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === 'ArrowLeft' || e.key === 'a' || e.key==='A') moveLane(-1);
+    else if(e.key === 'ArrowRight' || e.key === 'd' || e.key==='D') moveLane(1);
+    else if(e.key === ' ' || e.key==='Enter'){
+      if(!started) startGame();
+      else if(gameOver) restartGame();
+    }
+  });
+
+  document.getElementById('zone-left').addEventListener('pointerdown', (e)=>{ moveLane(-1); });
+  document.getElementById('zone-right').addEventListener('pointerdown', (e)=>{ moveLane(1); });
+
+  /* ============ ゲーム開始・終了 ============ */
+  const startOverlay = document.getElementById('start-overlay');
+  const gameoverOverlay = document.getElementById('gameover-overlay');
+  const scoreVal = document.getElementById('score-val');
+  const bestVal = document.getElementById('best-val');
+  const zbarWrap = document.getElementById('zoomies-bar-wrap');
+  const zbar = document.getElementById('zoomies-bar');
+
+  function resetWorld(){
+    // 既存の障害物・アイテムを除去
+    for(const o of obstacles) scene.remove(o.mesh);
+    for(const it of items) scene.remove(it.mesh);
+    obstacles.length = 0;
+    items.length = 0;
+
+    laneIndex = 1;
+    laneTargetX = 0;
+    cat.position.set(0,0,2);
+    cat.rotation.set(0,0,0);
+    cat.userData.bankTarget = 0;
+
+    distance = 0;
+    score = 0;
+    speed = baseSpeed;
+    zoomies = false;
+    zoomiesTimer = 0;
+    stunTimer = 0;
+    laid = false;
+    gameOver = false;
+
+    nextSpawnZ = SPAWN_START_Z;
+    initSpawns();
+    scoreVal.textContent = '0';
+  }
+
+  function startGame(){
+    started = true;
+    running = true;
+    startOverlay.classList.add('hidden');
+    resetWorld();
+  }
+
+  function endGame(){
+    running = false;
+    gameOver = true;
+    laid = true;
+    if(score > best){
+      best = score;
+      try{ localStorage.setItem('catrun_best', String(best)); }catch(e){}
+    }
+    document.getElementById('final-score').textContent = score;
+    document.getElementById('final-best').textContent = 'ベスト: ' + best;
+    bestVal.textContent = best;
+    setTimeout(()=>{ gameoverOverlay.classList.remove('hidden'); }, 650);
+  }
+
+  document.getElementById('start-btn').addEventListener('click', startGame);
+  document.getElementById('retry-btn').addEventListener('click', ()=>{
+    gameoverOverlay.classList.add('hidden');
+    running = true;
+    resetWorld();
+  });
+  function restartGame(){
+    gameoverOverlay.classList.add('hidden');
+    running = true;
+    resetWorld();
+  }
+
+  /* ============ 衝突判定 ============ */
+  function checkCollisions(){
+    for(const o of obstacles){
+      if(o.hit) continue;
+      if(o.lane !== laneIndex) continue;
+      const dz = o.mesh.position.z - cat.position.z;
+      if(dz > -0.9 && dz < 0.9){
+        if(zoomies){
+          // ズーミーズ中は障害物を弾き飛ばして無敵通過
+          o.hit = true;
+          const dir = new THREE.Vector3(Math.random()-0.5, 1, Math.random()-0.5).normalize();
+          o.mesh.userData.fly = dir;
+          continue;
+        }
+        o.hit = true;
+        triggerCrash();
+      }
+    }
+    for(const it of items){
+      if(it.collected) continue;
+      if(it.lane !== laneIndex) continue;
+      const dz = it.mesh.position.z - cat.position.z;
+      if(dz > -1.0 && dz < 1.0){
+        it.collected = true;
+        activateZoomies();
+        scene.remove(it.mesh);
+      }
+    }
+  }
+
+  function triggerCrash(){
+    if(stunTimer > 0 || gameOver) return;
+    stunTimer = 1.1;
+    speed = 0;
+  }
+
+  function activateZoomies(){
+    zoomies = true;
+    zoomiesTimer = ZOOMIES_DURATION;
+    zbarWrap.classList.add('show');
+  }
+
+  /* ============ ワールドスクロール（オブジェクト再利用） ============ */
+  function recycleWorld(){
+    // 床タイル
+    for(const tile of floorTiles){
+      if(tile.position.z - cat.position.z > TILE_LEN*0.6){
+        tile.position.z -= TILE_LEN * TILE_COUNT;
+      }
+    }
+    // 障害物・アイテムの掃除（画面後方に流れたら削除）
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o = obstacles[i];
+      if(o.mesh.userData.fly){
+        o.mesh.position.addScaledVector(o.mesh.userData.fly, 0.35);
+        o.mesh.rotation.x += 0.3;
+        o.mesh.rotation.z += 0.2;
+      }
+      if(o.mesh.position.z - cat.position.z > 6){
+        scene.remove(o.mesh);
+        obstacles.splice(i,1);
+      }
+    }
+    for(let i=items.length-1;i>=0;i--){
+      const it = items[i];
+      if(it.mesh.position.z - cat.position.z > 6){
+        scene.remove(it.mesh);
+        items.splice(i,1);
+      }
+    }
+    // 新規スポーン
+    while(nextSpawnZ > cat.position.z - 60){
+      nextSpawnZ -= SPAWN_STEP;
+    }
+    while(true){
+      const furthest = obstacles.concat(items).reduce((min,o)=> Math.min(min, o.mesh.position.z), 0);
+      if(furthest > cat.position.z - 45) {
+        const z = cat.position.z - 45 - Math.random()*8;
+        if(Math.random() < 0.85) spawnRow(z);
+        else spawnRow(z); // keep density; empty rows handled by low count already
+      } else break;
+    }
+  }
+
+  /* ============ アニメーションループ ============ */
+  const clock = new THREE.Clock();
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+
+    // 雲の移動
+    for(const c of clouds){ c.position.x += c.userData.speed * dt; if(c.position.x>60) c.position.x=-60; }
+
+    if(running && !gameOver){
+      // ズーミーズタイマー
+      if(zoomies){
+        zoomiesTimer -= dt;
+        zbar.style.width = Math.max(0,(zoomiesTimer/ZOOMIES_DURATION)*100) + '%';
+        if(zoomiesTimer <= 0){
+          zoomies = false;
+          zbarWrap.classList.remove('show');
+        }
+      }
+
+      // スタン（ぶつかった演出）
+      if(stunTimer > 0){
+        stunTimer -= dt;
+        laid = stunTimer > 0.15 ? false : true;
+        cat.rotation.x = THREE.MathUtils.lerp(cat.rotation.x, laid? -Math.PI/2*0.92:0, dt*10);
+        cat.position.y = laid ? 0.0 : cat.position.y;
+        if(stunTimer <= 0){
+          endGame();
+        }
+      } else {
+        cat.rotation.x = THREE.MathUtils.lerp(cat.rotation.x, 0, dt*10);
+
+        // スピード（じわ加速 + ズーミーズ倍率）
+        const targetSpeed = baseSpeed * (1 + Math.min(distance/900, 0.9)) * (zoomies?ZOOMIES_MULT:1);
+        speed = THREE.MathUtils.lerp(speed, targetSpeed, dt*3);
+
+        distance += speed * dt;
+        cat.position.z -= speed * dt;
+
+        score = Math.floor(distance);
+        scoreVal.textContent = score;
+
+        // レーン移動（横スライド）
+        cat.position.x = THREE.MathUtils.lerp(cat.position.x, laneTargetX, dt*10);
+        const bankTarget = cat.userData.bankTarget || 0;
+        cat.rotation.z = THREE.MathUtils.lerp(cat.rotation.z, bankTarget*0.5, dt*8);
+        cat.userData.bankTarget = THREE.MathUtils.lerp(bankTarget, 0, dt*6);
+
+        // 走行アニメ（脚・尻尾・上下バウンド）
+        runCycle += dt * (zoomies? 22:14);
+        const legs = cat.userData.legs;
+        legs[0].rotation.x = Math.sin(runCycle)*0.9;
+        legs[1].rotation.x = Math.sin(runCycle+Math.PI)*0.9;
+        legs[2].rotation.x = Math.sin(runCycle+Math.PI)*0.9;
+        legs[3].rotation.x = Math.sin(runCycle)*0.9;
+        cat.position.y = Math.abs(Math.sin(runCycle))*0.09;
+        cat.userData.tail.rotation.y = Math.sin(runCycle*0.6)*0.4;
+        cat.userData.head.rotation.y = Math.sin(runCycle*0.5)*0.08;
+
+        checkCollisions();
+        recycleWorld();
+      }
+
+      // アイテムのふわふわ演出
+      for(const it of items){
+        it.mesh.userData.bob += dt*4;
+        it.mesh.position.y = 0.9 + Math.sin(it.mesh.userData.bob)*0.1;
+        it.mesh.rotation.y += dt*2;
+      }
+
+      // カメラ追従（ズーミーズ中は少し引く & FOV演出）
+      const desiredOffset = zoomies ? new THREE.Vector3(0,2.9,7.2) : camOffset;
+      const camPos = new THREE.Vector3().copy(cat.position).add(desiredOffset);
+      camera.position.lerp(camPos, dt*6);
+      const lookTarget = new THREE.Vector3(cat.position.x*0.5, cat.position.y+0.9, cat.position.z-4);
+      camera.lookAt(lookTarget);
+      camera.fov = THREE.MathUtils.lerp(camera.fov, zoomies?70:62, dt*4);
+      camera.updateProjectionMatrix();
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+})();
+</script>
+</body>
+</html>
